@@ -1,0 +1,89 @@
+---
+output:
+  html_document: default
+  pdf_document: default
+header-includes:
+- \usepackage{fvextra}
+- \DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\{\}}
+---
+# BIS629 Advanced Implementation Science Final Exam Part II Question 5
+**Samuele Petruccelli**
+**December 16, 2025**
+
+```{r message=FALSE, warning=FALSE}
+#stand back! clear!
+rm(list = ls())
+#i got a package. usps.
+library(tidyverse)
+library(formatR)
+library(knitr)
+library(geepack)
+library(nloptr)
+load("MaxART_final.RData")
+```
+
+Joint optimization of (K,m). Question 5 is based on the MaxART data (”MaxART final.RData”)
+
+A) Find the optimal K and m to minimize the cost of a new balanced parallel CRT with features otherwise similar to MaxART data (“MaxART final.Rdata”), with at least 80% power. Let c1 = 20, 000 be the unit cost of adding a cluster, and c2 = 100 be the unit cost of adding additional participants within a cluster. Find the optimal K and m such that the total cost of the study Kc1 + Kmc2 is minimized given the required power of this study to be 80% with 5% Type 1 error rate. To obtain possible parameter values to inform the design of this new study similar to MaxART, please fit a GEE for binary outcomes with the identity link, where the outcome variable is Y where 1 means CD4 counts at 18 months were >= 350cells/mm3 and 0 otherwise, “clinc” is the id for each clinic in this cluster randomized trial, and ‘Treatment’ is the treatment indicator. Assume constant cluster size.
+
+*First we fit a GEE for binary outcomes with the identity link, where the outcome variable is Y where 1 means CD4 counts at 18 months were >= 350cells/mm3 and 0 otherwise, “clinc” is the id for each clinic in this cluster randomized trial, and ‘Treatment’ is the treatment indicator.*
+
+```{r}
+fit <- geeglm(data = maxart_adherence, formula = Y ~ treatment, id = clinc, family = binomial(link = "identity"), corstr = "exchangeable")
+fsummary <- summary(fit)
+```
+
+*Then input our parameters.*
+
+```{r}
+#parameters
+c1 <- 20000
+c2 <- 100
+beta <- fsummary$coefficients[2,1]
+rho <- as.numeric(fit$geese$alpha)
+sigma2 <- mean(maxart_adherence$Y) * (1 - mean(maxart_adherence$Y))
+ncp_req <- 7.85
+```
+
+*Using the function from lab.*
+
+```{r}
+f_new = function(m, sigma2, beta, rho, c1, c2, ncp_req) {
+  objective = (ncp_req * c1 * sigma2 * (1 + (m - 1) * rho) + 
+               ncp_req * c2 * sigma2 * (1 + (m - 1) * rho) * m) / (beta^2 * m)
+  return(objective)
+}
+```
+
+*Then optimize.*
+
+```{r}
+#using the optim function
+result = optimize(f_new, c(1, 100), tol=0.0001, sigma2 = sigma2, beta = beta, rho = rho, c1 = c1, c2 = c2, ncp_req = ncp_req, lower = 1)
+#get an integer
+optimal_m = round(result$minimum, 0)
+#and plug back into our K equation with an integer
+K = round(2 * ncp_req * sigma2 * (1 + (optimal_m - 1) * rho) / (beta^2 * optimal_m), 0)
+```
+
+*We find that our optimal K is* `r K` *and m is* `r optimal_m`. *The cost is* `r round(result$objective, 0)`.
+
+B) Now suppose the per-cluster cost is drastically reduced to c1 = 200. What is the optimal K and m now?
+
+```{r}
+c1 <- 200
+#function from lab
+f_new = function(m, sigma2, beta, rho, c1, c2, ncp_req) {
+  objective = (ncp_req * c1 * sigma2 * (1 + (m - 1) * rho) + 
+               ncp_req * c2 * sigma2 * (1 + (m - 1) * rho) * m) / (beta^2 * m)
+  return(objective)
+}
+#using the optim function
+result_l = optimize(f_new, c(1, 100), tol=0.0001, sigma2 = sigma2, beta = beta, rho = rho, c1 = c1, c2 = c2, ncp_req = ncp_req, lower = 1)
+#get an integer
+optimal_m_l = round(result_l$minimum, 0)
+#and plug back into our K equation with an integer
+K_l = round(2 * ncp_req * sigma2 * (1 + (optimal_m_l - 1) * rho) / (beta^2 * optimal_m_l), 0)
+```
+
+*We now find that our optimal K is* `r K_l` *and m is* `r optimal_m_l`. *The cost is* `r round(result_l$objective, 0)`.
